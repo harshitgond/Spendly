@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <sstream>
+#include <cstdlib>
 
 using namespace std;
 
@@ -347,9 +348,12 @@ int main()
     cout << "====================================\n";
     cout << "Server running on port 18080...\n";
 
-    app.port(18080)
-       .multithreaded()
-       .run();
+   const char* portEnv = std::getenv("PORT");
+int port = portEnv ? std::stoi(portEnv) : 18080;
 
+app.bindaddr("0.0.0.0")
+   .port(port)
+   .multithreaded()
+   .run();
     return 0;
 }
