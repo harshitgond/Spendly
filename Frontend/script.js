@@ -5,6 +5,315 @@ let budget = 0;
 
 const API_URL = "https://spendly-6bnh.onrender.com";
 
+let authToken = localStorage.getItem("spendly_token");
+let currentUsername = localStorage.getItem("spendly_username");
+
+document.querySelector(".app").style.display = "none";
+
+
+// ================= AUTH HELPER =================
+
+async function authFetch(url, options = {}) {
+
+    options.headers = {
+        ...(options.headers || {}),
+        "Authorization": `Bearer ${authToken}`
+    };
+
+    const response = await fetch(url, options);
+
+    if (response.status === 401) {
+
+        localStorage.removeItem("spendly_token");
+        localStorage.removeItem("spendly_username");
+
+        authToken = null;
+        currentUsername = null;
+
+        document.querySelector(".app").style.display = "none";
+        document.getElementById("authScreen").style.display = "flex";
+
+        throw new Error("Session expired");
+    }
+
+    return response;
+}
+
+
+// ================= LOGIN =================
+
+document.getElementById("loginBtn").addEventListener(
+    "click",
+    async () => {
+
+        const username =
+            document.getElementById("loginUsername").value.trim();
+
+        const password =
+            document.getElementById("loginPassword").value;
+
+        const message =
+            document.getElementById("authMessage");
+
+        if (!username || !password) {
+            message.textContent =
+                "Please enter username and password.";
+            return;
+        }
+
+        try {
+
+            const response = await fetch(
+                `${API_URL}/login`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                }
+            );
+
+            if (!response.ok) {
+
+                const errorText =
+                    await response.text();
+
+                message.textContent =
+                    errorText || "Login failed.";
+
+                return;
+            }
+
+            const data =
+                await response.json();
+
+            authToken = data.token;
+            currentUsername = data.username;
+
+            localStorage.setItem(
+                "spendly_token",
+                authToken
+            );
+
+            localStorage.setItem(
+                "spendly_username",
+                currentUsername
+            );
+
+            document.getElementById(
+                "authScreen"
+            ).style.display = "none";
+
+            document.querySelector(
+                ".app"
+            ).style.display = "";
+
+            message.textContent = "";
+
+            await loadDataFromBackend();
+
+        }
+        catch (error) {
+
+            console.error(error);
+
+            message.textContent =
+                "Could not connect to backend.";
+        }
+    }
+);
+
+
+// ================= REGISTER =================
+
+document.getElementById("registerBtn").addEventListener(
+    "click",
+    async () => {
+
+        const username =
+            document.getElementById("registerUsername").value.trim();
+
+        const password =
+            document.getElementById("registerPassword").value;
+
+        const message =
+            document.getElementById("authMessage");
+
+        if (!username || !password) {
+
+            message.textContent =
+                "Please enter username and password.";
+
+            return;
+        }
+
+        try {
+
+            const response = await fetch(
+                `${API_URL}/register`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                }
+            );
+
+            if (!response.ok) {
+
+                const errorText =
+                    await response.text();
+
+                message.textContent =
+                    errorText || "Registration failed.";
+
+                return;
+            }
+
+            message.textContent =
+                "Registration successful! Please login.";
+
+            document.getElementById(
+                "registerUsername"
+            ).value = "";
+
+            document.getElementById(
+                "registerPassword"
+            ).value = "";
+
+            document.getElementById(
+                "registerForm"
+            ).style.display = "none";
+
+            document.getElementById(
+                "loginForm"
+            ).style.display = "block";
+
+        }
+        catch (error) {
+
+            console.error(error);
+
+            message.textContent =
+                "Could not connect to backend.";
+        }
+    }
+);
+
+
+// ================= SWITCH LOGIN / REGISTER =================
+
+document.getElementById(
+    "showRegister"
+).addEventListener(
+    "click",
+    () => {
+
+        document.getElementById(
+            "loginForm"
+        ).style.display = "none";
+
+        document.getElementById(
+            "registerForm"
+        ).style.display = "block";
+
+        document.getElementById(
+            "authMessage"
+        ).textContent = "";
+    }
+);
+
+
+document.getElementById(
+    "showLogin"
+).addEventListener(
+    "click",
+    () => {
+
+        document.getElementById(
+            "registerForm"
+        ).style.display = "none";
+
+        document.getElementById(
+            "loginForm"
+        ).style.display = "block";
+
+        document.getElementById(
+            "authMessage"
+        ).textContent = "";
+    }
+);
+
+
+// ================= CHECK EXISTING LOGIN =================
+
+async function checkAuth() {
+
+    if (!authToken) {
+
+        document.getElementById(
+            "authScreen"
+        ).style.display = "flex";
+
+        return;
+    }
+
+    try {
+
+        const response = await authFetch(
+            `${API_URL}/me`
+        );
+
+        if (!response.ok) {
+            throw new Error("Not logged in");
+        }
+
+        const user =
+            await response.json();
+
+        currentUsername =
+            user.username;
+
+        document.querySelector(
+            ".app"
+        ).style.display = "";
+
+        document.getElementById(
+            "authScreen"
+        ).style.display = "none";
+
+        await loadDataFromBackend();
+
+    }
+    catch (error) {
+
+        localStorage.removeItem("spendly_token");
+        localStorage.removeItem("spendly_username");
+
+        authToken = null;
+
+        document.querySelector(
+            ".app"
+        ).style.display = "none";
+
+        document.getElementById(
+            "authScreen"
+        ).style.display = "flex";
+    }
+}
+
 // ================= LOAD DATA FROM C++ BACKEND =================
 
 async function loadDataFromBackend() {
@@ -13,8 +322,8 @@ async function loadDataFromBackend() {
 
         const [expensesResponse, budgetResponse] =
             await Promise.all([
-                fetch(`${API_URL}/expenses`),
-                fetch(`${API_URL}/budget`)
+                authFetch(`${API_URL}/expenses`),
+                authFetch(`${API_URL}/budget`)
             ]);
 
         if (!expensesResponse.ok || !budgetResponse.ok) {
@@ -50,7 +359,7 @@ async function loadDataFromBackend() {
 async function addExpenseToBackend(expense) {
 
     const response =
-        await fetch(`${API_URL}/expenses`, {
+        await authFetch(`${API_URL}/expenses`, {
 
             method: "POST",
 
@@ -74,7 +383,7 @@ async function addExpenseToBackend(expense) {
 async function deleteExpenseFromBackend(id) {
 
     const response =
-        await fetch(
+        await authFetch(
             `${API_URL}/expenses/${id}`,
             {
                 method: "DELETE"
@@ -91,7 +400,7 @@ async function deleteExpenseFromBackend(id) {
 async function saveBudgetToBackend(value) {
 
     const response =
-        await fetch(
+        await authFetch(
             `${API_URL}/budget`,
             {
 
@@ -1346,4 +1655,4 @@ function escapeHTML(text) {
 
 // ================= START APP =================
 
-loadDataFromBackend();
+checkAuth();

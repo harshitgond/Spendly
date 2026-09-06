@@ -10,11 +10,16 @@
 #include <string>
 #include <sstream>
 #include <cstdlib>
+#include <map>
+#include <random>
+#include <chrono>
+#include <functional>
+#include <algorithm>
 
 using namespace std;
 
 // ======================================================
-// DATA STRUCTURE
+// DATA STRUCTURES
 // ======================================================
 
 struct Expense
@@ -26,41 +31,182 @@ struct Expense
     string date;
 };
 
-vector<Expense> expenses;
-double monthlyBudget = 0;
-
-
-// ======================================================
-// SAVE EXPENSES
-// ======================================================
-
-void saveExpenses()
+struct User
 {
-    ofstream file("expenses.txt");
+    int id;
+    string username;
+    string password;
+};
 
-    for (const auto& e : expenses)
+// Logged-in sessions
+map<string, int> sessions;
+
+
+// ======================================================
+// PASSWORD HASH
+// ======================================================
+// Demo-level password hashing for this student project.
+
+string hashPassword(const string& password)
+{
+    hash<string> hasher;
+    size_t hashed = hasher(password);
+
+    stringstream ss;
+    ss << hashed;
+
+    return ss.str();
+}
+
+
+// ======================================================
+// USER FILE
+// ======================================================
+
+const string USERS_FILE = "users.txt";
+
+
+// ======================================================
+// LOAD USERS
+// ======================================================
+
+vector<User> loadUsers()
+{
+    vector<User> users;
+
+    ifstream file(USERS_FILE);
+
+    if (!file)
+        return users;
+
+    string line;
+
+    while (getline(file, line))
     {
-        file << e.id << "|"
-             << e.amount << "|"
-             << e.category << "|"
-             << e.description << "|"
-             << e.date << "\n";
+        if (line.empty())
+            continue;
+
+        stringstream ss(line);
+
+        User user;
+        string temp;
+
+        getline(ss, temp, '|');
+        user.id = stoi(temp);
+
+        getline(ss, user.username, '|');
+        getline(ss, user.password, '|');
+
+        users.push_back(user);
     }
+
+    file.close();
+
+    return users;
+}
+
+
+// ======================================================
+// SAVE USERS
+// ======================================================
+
+void saveUser(const User& user)
+{
+    ofstream file(USERS_FILE, ios::app);
+
+    file << user.id << "|"
+         << user.username << "|"
+         << user.password << "\n";
 
     file.close();
 }
 
 
 // ======================================================
-// LOAD EXPENSES
+// FIND USER BY ID
 // ======================================================
 
-void loadExpenses()
+bool getUserById(int id, User& result)
 {
-    ifstream file("expenses.txt");
+    vector<User> users = loadUsers();
+
+    for (const auto& user : users)
+    {
+        if (user.id == id)
+        {
+            result = user;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+// ======================================================
+// FIND USER BY USERNAME
+// ======================================================
+
+bool usernameExists(const string& username)
+{
+    vector<User> users = loadUsers();
+
+    for (const auto& user : users)
+    {
+        if (user.username == username)
+            return true;
+    }
+
+    return false;
+}
+
+
+// ======================================================
+// GENERATE USER ID
+// ======================================================
+
+int generateUserId()
+{
+    vector<User> users = loadUsers();
+
+    int maxId = 0;
+
+    for (const auto& user : users)
+    {
+        maxId = max(maxId, user.id);
+    }
+
+    return maxId + 1;
+}
+
+
+// ======================================================
+// FILE NAMES FOR EACH USER
+// ======================================================
+
+string expenseFile(int userId)
+{
+    return "user_" + to_string(userId) + "_expenses.txt";
+}
+
+string budgetFile(int userId)
+{
+    return "user_" + to_string(userId) + "_budget.txt";
+}
+
+
+// ======================================================
+// LOAD USER EXPENSES
+// ======================================================
+
+vector<Expense> loadExpenses(int userId)
+{
+    vector<Expense> expenses;
+
+    ifstream file(expenseFile(userId));
 
     if (!file)
-        return;
+        return expenses;
 
     string line;
 
@@ -88,35 +234,105 @@ void loadExpenses()
     }
 
     file.close();
+
+    return expenses;
 }
 
 
 // ======================================================
-// SAVE BUDGET
+// SAVE USER EXPENSES
 // ======================================================
 
-void saveBudget()
+void saveExpenses(int userId, const vector<Expense>& expenses)
 {
-    ofstream file("budget.txt");
+    ofstream file(expenseFile(userId));
 
-    file << monthlyBudget;
+    for (const auto& e : expenses)
+    {
+        file << e.id << "|"
+             << e.amount << "|"
+             << e.category << "|"
+             << e.description << "|"
+             << e.date << "\n";
+    }
 
     file.close();
 }
 
 
 // ======================================================
-// LOAD BUDGET
+// LOAD USER BUDGET
 // ======================================================
 
-void loadBudget()
+double loadBudget(int userId)
 {
-    ifstream file("budget.txt");
+    double budget = 0;
+
+    ifstream file(budgetFile(userId));
 
     if (file)
-        file >> monthlyBudget;
+        file >> budget;
 
     file.close();
+
+    return budget;
+}
+
+
+// ======================================================
+// SAVE USER BUDGET
+// ======================================================
+
+void saveBudget(int userId, double budget)
+{
+    ofstream file(budgetFile(userId));
+
+    file << budget;
+
+    file.close();
+}
+
+
+// ======================================================
+// GENERATE LOGIN TOKEN
+// ======================================================
+
+string generateToken()
+{
+    static random_device rd;
+    static mt19937 generator(rd());
+
+    uniform_int_distribution<unsigned long long> distribution;
+
+    unsigned long long part1 = distribution(generator);
+    unsigned long long part2 = distribution(generator);
+
+    return to_string(part1) + to_string(part2);
+}
+
+
+// ======================================================
+// GET LOGGED-IN USER
+// ======================================================
+
+int getLoggedInUser(const crow::request& req)
+{
+    string auth = req.get_header_value("Authorization");
+
+    if (auth.size() < 8)
+        return -1;
+
+    if (auth.substr(0, 7) != "Bearer ")
+        return -1;
+
+    string token = auth.substr(7);
+
+    auto it = sessions.find(token);
+
+    if (it == sessions.end())
+        return -1;
+
+    return it->second;
 }
 
 
@@ -126,16 +342,17 @@ void loadBudget()
 
 int main()
 {
-    // Load saved data
-    loadExpenses();
-    loadBudget();
-
-    // CORS enabled globally
     crow::App<crow::CORSHandler> app;
+
+    // ==================================================
+    // CORS
+    // ==================================================
 
     app.get_middleware<crow::CORSHandler>()
         .global()
-        .origin("*");
+        .origin("*")
+        .headers("Content-Type", "Authorization")
+        .methods("OPTIONS"_method, "GET"_method, "POST"_method, "DELETE"_method);
 
 
     // ==================================================
@@ -152,14 +369,205 @@ int main()
 
 
     // ==================================================
+    // REGISTER
+    // POST /register
+    // ==================================================
+
+    CROW_ROUTE(app, "/register")
+    .methods(crow::HTTPMethod::POST)
+    ([](const crow::request& req)
+    {
+        auto body = crow::json::load(req.body);
+
+        if (!body ||
+            !body.has("username") ||
+            !body.has("password"))
+        {
+            return crow::response(
+                400,
+                "Username and password are required"
+            );
+        }
+
+        string username = body["username"].s();
+        string password = body["password"].s();
+
+        if (username.empty() || password.empty())
+        {
+            return crow::response(
+                400,
+                "Username and password cannot be empty"
+            );
+        }
+
+        if (usernameExists(username))
+        {
+            return crow::response(
+                409,
+                "Username already exists"
+            );
+        }
+
+        User user;
+
+        user.id = generateUserId();
+        user.username = username;
+        user.password = hashPassword(password);
+
+        saveUser(user);
+
+        crow::json::wvalue result;
+
+        result["message"] = "Registration successful";
+        result["user_id"] = user.id;
+        result["username"] = user.username;
+
+        return crow::response(result);
+    });
+
+
+    // ==================================================
+    // LOGIN
+    // POST /login
+    // ==================================================
+
+    CROW_ROUTE(app, "/login")
+    .methods(crow::HTTPMethod::POST)
+    ([](const crow::request& req)
+    {
+        auto body = crow::json::load(req.body);
+
+        if (!body ||
+            !body.has("username") ||
+            !body.has("password"))
+        {
+            return crow::response(
+                400,
+                "Username and password are required"
+            );
+        }
+
+        string username = body["username"].s();
+        string password = body["password"].s();
+
+        string hashedPassword = hashPassword(password);
+
+        vector<User> users = loadUsers();
+
+        for (const auto& user : users)
+        {
+            if (user.username == username &&
+                user.password == hashedPassword)
+            {
+                string token = generateToken();
+
+                sessions[token] = user.id;
+
+                crow::json::wvalue result;
+
+                result["message"] = "Login successful";
+                result["token"] = token;
+                result["user_id"] = user.id;
+                result["username"] = user.username;
+
+                return crow::response(result);
+            }
+        }
+
+        return crow::response(
+            401,
+            "Invalid username or password"
+        );
+    });
+
+
+    // ==================================================
+    // LOGOUT
+    // POST /logout
+    // ==================================================
+
+    CROW_ROUTE(app, "/logout")
+    .methods(crow::HTTPMethod::POST)
+    ([](const crow::request& req)
+    {
+        string auth = req.get_header_value("Authorization");
+
+        if (auth.size() >= 8 &&
+            auth.substr(0, 7) == "Bearer ")
+        {
+            string token = auth.substr(7);
+
+            sessions.erase(token);
+        }
+
+        crow::json::wvalue result;
+
+        result["message"] = "Logged out successfully";
+
+        return crow::response(result);
+    });
+
+
+    // ==================================================
+    // CURRENT USER
+    // GET /me
+    // ==================================================
+
+    CROW_ROUTE(app, "/me")
+    .methods(crow::HTTPMethod::GET)
+    ([](const crow::request& req)
+    {
+        int userId = getLoggedInUser(req);
+
+        if (userId == -1)
+        {
+            return crow::response(
+                401,
+                "Unauthorized"
+            );
+        }
+
+        User user;
+
+        if (!getUserById(userId, user))
+        {
+            return crow::response(
+                404,
+                "User not found"
+            );
+        }
+
+        crow::json::wvalue result;
+
+        result["user_id"] = user.id;
+        result["username"] = user.username;
+
+        return crow::response(result);
+    });
+
+
+    // ==================================================
     // GET ALL EXPENSES
     // GET /expenses
     // ==================================================
 
     CROW_ROUTE(app, "/expenses")
     .methods(crow::HTTPMethod::GET)
-    ([]()
+    ([](const crow::request& req)
     {
+        int userId = getLoggedInUser(req);
+
+        if (userId == -1)
+        {
+            return crow::response(
+                401,
+                "Unauthorized"
+            );
+        }
+
+        vector<Expense> expenses =
+            loadExpenses(userId);
+
         crow::json::wvalue::list items;
 
         for (const auto& e : expenses)
@@ -175,7 +583,9 @@ int main()
             items.push_back(std::move(item));
         }
 
-        return crow::response(crow::json::wvalue(items));
+        return crow::response(
+            crow::json::wvalue(items)
+        );
     });
 
 
@@ -188,6 +598,16 @@ int main()
     .methods(crow::HTTPMethod::POST)
     ([](const crow::request& req)
     {
+        int userId = getLoggedInUser(req);
+
+        if (userId == -1)
+        {
+            return crow::response(
+                401,
+                "Unauthorized"
+            );
+        }
+
         auto body = crow::json::load(req.body);
 
         if (!body)
@@ -198,30 +618,30 @@ int main()
             );
         }
 
+        vector<Expense> expenses =
+            loadExpenses(userId);
+
         Expense e;
 
-        // Generate ID
         if (expenses.empty())
             e.id = 1;
         else
             e.id = expenses.back().id + 1;
 
-        // Read data
         e.amount = body["amount"].d();
         e.category = body["category"].s();
         e.description = body["description"].s();
         e.date = body["date"].s();
 
-        // Save in vector
         expenses.push_back(e);
 
-        // Save in file
-        saveExpenses();
+        saveExpenses(userId, expenses);
 
-        // Response
         crow::json::wvalue result;
 
-        result["message"] = "Expense added successfully";
+        result["message"] =
+            "Expense added successfully";
+
         result["id"] = e.id;
 
         return crow::response(result);
@@ -235,8 +655,21 @@ int main()
 
     CROW_ROUTE(app, "/expenses/<int>")
     .methods(crow::HTTPMethod::DELETE)
-    ([](int id)
+    ([](const crow::request& req, int id)
     {
+        int userId = getLoggedInUser(req);
+
+        if (userId == -1)
+        {
+            return crow::response(
+                401,
+                "Unauthorized"
+            );
+        }
+
+        vector<Expense> expenses =
+            loadExpenses(userId);
+
         for (auto it = expenses.begin();
              it != expenses.end();
              ++it)
@@ -245,7 +678,7 @@ int main()
             {
                 expenses.erase(it);
 
-                saveExpenses();
+                saveExpenses(userId, expenses);
 
                 return crow::response(
                     "Expense deleted successfully"
@@ -267,8 +700,24 @@ int main()
 
     CROW_ROUTE(app, "/summary")
     .methods(crow::HTTPMethod::GET)
-    ([]()
+    ([](const crow::request& req)
     {
+        int userId = getLoggedInUser(req);
+
+        if (userId == -1)
+        {
+            return crow::response(
+                401,
+                "Unauthorized"
+            );
+        }
+
+        vector<Expense> expenses =
+            loadExpenses(userId);
+
+        double budget =
+            loadBudget(userId);
+
         double total = 0;
 
         for (const auto& e : expenses)
@@ -276,12 +725,13 @@ int main()
             total += e.amount;
         }
 
-        double remaining = monthlyBudget - total;
+        double remaining =
+            budget - total;
 
         crow::json::wvalue result;
 
         result["total"] = total;
-        result["budget"] = monthlyBudget;
+        result["budget"] = budget;
         result["remaining"] = remaining;
         result["transactions"] =
             static_cast<int>(expenses.size());
@@ -297,11 +747,24 @@ int main()
 
     CROW_ROUTE(app, "/budget")
     .methods(crow::HTTPMethod::GET)
-    ([]()
+    ([](const crow::request& req)
     {
+        int userId = getLoggedInUser(req);
+
+        if (userId == -1)
+        {
+            return crow::response(
+                401,
+                "Unauthorized"
+            );
+        }
+
+        double budget =
+            loadBudget(userId);
+
         crow::json::wvalue result;
 
-        result["budget"] = monthlyBudget;
+        result["budget"] = budget;
 
         return crow::response(result);
     });
@@ -316,6 +779,16 @@ int main()
     .methods(crow::HTTPMethod::POST)
     ([](const crow::request& req)
     {
+        int userId = getLoggedInUser(req);
+
+        if (userId == -1)
+        {
+            return crow::response(
+                401,
+                "Unauthorized"
+            );
+        }
+
         auto body = crow::json::load(req.body);
 
         if (!body)
@@ -326,14 +799,17 @@ int main()
             );
         }
 
-        monthlyBudget = body["budget"].d();
+        double budget =
+            body["budget"].d();
 
-        saveBudget();
+        saveBudget(userId, budget);
 
         crow::json::wvalue result;
 
-        result["message"] = "Budget saved successfully";
-        result["budget"] = monthlyBudget;
+        result["message"] =
+            "Budget saved successfully";
+
+        result["budget"] = budget;
 
         return crow::response(result);
     });
@@ -346,14 +822,22 @@ int main()
     cout << "====================================\n";
     cout << "   STUDENT EXPENSE TRACKER API\n";
     cout << "====================================\n";
-    cout << "Server running on port 18080...\n";
 
-   const char* portEnv = std::getenv("PORT");
-int port = portEnv ? std::stoi(portEnv) : 18080;
+    const char* portEnv =
+        std::getenv("PORT");
 
-app.bindaddr("0.0.0.0")
-   .port(port)
-   .multithreaded()
-   .run();
+    int port =
+        portEnv
+        ? std::stoi(portEnv)
+        : 18080;
+
+    cout << "Server running on port "
+         << port << "...\n";
+
+    app.bindaddr("0.0.0.0")
+       .port(port)
+       .multithreaded()
+       .run();
+
     return 0;
 }
