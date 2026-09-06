@@ -1,0 +1,2 @@
+1|1500|Other|Room Rent|2026-08-29
+2|300|Food|Canteen|2026-08-29
