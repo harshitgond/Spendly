@@ -3,7 +3,7 @@
 let expenses = [];
 let budget = 0;
 
-const API_URL = "http://127.0.0.1:18080";
+const API_URL = "https://spendly-6bnh.onrender.com";
 
 // ================= LOAD DATA FROM C++ BACKEND =================
 
