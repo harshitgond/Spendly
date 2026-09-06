@@ -1,0 +1,25 @@
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y \
+    g++ \
+    git \
+    libboost-all-dev \
+    libasio-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+RUN git clone --depth 1 --branch v1.2.1 https://github.com/CrowCpp/Crow.git /crow
+
+COPY Backend/main.cpp /app/main.cpp
+COPY Backend/expenses.txt /app/expenses.txt
+COPY Backend/budget.txt /app/budget.txt
+
+RUN g++ -std=c++17 -O2 -pthread \
+    -I/crow/include \
+    /app/main.cpp \
+    -o /app/spendy
+
+EXPOSE 10000
+
+CMD ["/app/spendy"]
